@@ -1,0 +1,6 @@
+FROM alpine
+WORKDIR /app
+ADD build build
+ENTRYPOINT build/version-metrics
+
+EXPOSE 8080

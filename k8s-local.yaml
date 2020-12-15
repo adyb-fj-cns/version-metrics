@@ -1,0 +1,84 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  namespace: default
+  name: version-metrics
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dashboard
+subjects:
+- kind: ServiceAccount
+  name: version-metrics 
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: version-metrics
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name:  version-metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: version-metrics
+  labels:
+    app: version-metrics
+    service: version-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: version-metrics
+  template:
+    metadata:
+      labels:
+        app: version-metrics
+        service: version-metrics
+    spec:
+      serviceAccountName: version-metrics
+      containers:
+      - name: version-metrics
+        image: version-metrics-tilt
+        env:
+          - name: NAMESPACE
+            value: default
+          - name: REFRESH_PERIOD
+            value: "60" 
+          - name: PROMETHEUS_ENDPOINT
+            value: "/probe"  
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: version-metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/probe"
+    prometheus.io/scheme: "http"
+spec:
+  selector:
+    app: version-metrics
+  type: NodePort
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+      nodePort: 30800
+---

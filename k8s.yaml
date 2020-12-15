@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: version-metrics
+  labels:
+    app: version-metrics
+    service: version-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: version-metrics
+  template:
+    metadata:
+      labels:
+        app: version-metrics
+        service: version-metrics
+    spec:
+      containers:
+      - name: version-metrics
+        image: version-metrics-tilt
+        env:
+          - name: NAMESPACE
+            value: ci
+          - name: REFRESH_PERIOD
+            value: "5" 
+          - name: PROMETHEUS_ENDPOINT
+            value: "/probe"             
+        ports:
+        - containerPort: 8000
+        - containerPort: 9000
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: version-metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/probe"
+    prometheus.io/scheme: "http"
+spec:
+  selector:
+    app: version-metrics
+  type: NodePort
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+      nodePort: 30800
+    - name: http
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+      nodePort: 30900
+---
