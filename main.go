@@ -24,8 +24,9 @@ import (
 
 var (
 	addr          = flag.String("listen-address", ":8000", "The metrics endpoint port")
-	refreshPeriod = getInt(getEnv("REFRESH_PERIOD", "60"))
+	refreshPeriod = getInt(getEnv("REFRESH_PERIOD", "120"))
 	namespace     = getEnv("NAMESPACE", "default")
+	namespaces    = getNamespaces(getEnv("NAMESPACES", "default"))
 	endpoint      = getEnv("PROMETHEUS_ENDPOINT", "/metrics")
 	kubeconfig    = getEnv("KUBE_CONFIG", "kubeconfig")
 )
@@ -36,9 +37,13 @@ var (
 			Name: "bx_service_info",
 			Help: "Version information about BX Services",
 		},
-		[]string{"namespace", "pod", "version", "images"},
+		[]string{"namespace", "app", "pod", "version", "images"},
 	)
 )
+
+func getNamespaces(list string) []string {
+	return strings.Split(list, ",")
+}
 
 func getEnv(key, fallback string) string {
 	value, exists := os.LookupEnv(key)
@@ -70,10 +75,44 @@ type MetricData struct {
 	Images    string `json:"images"`
 }
 
+func getMetricData(clientset *kubernetes.Clientset, namespace string) []MetricData {
+	metricData := []MetricData{}
+	metricData = nil
+
+	pods, _ := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	for _, pod := range pods.Items {
+
+		containers := pod.Spec.Containers
+		metadata := pod.ObjectMeta
+		namespace := metadata.Namespace
+		app := metadata.Labels["app"]
+		pod := metadata.Name
+		version := metadata.Labels["version"]
+
+		//Long winded way first
+		imageArray := []string{}
+		for _, container := range containers {
+			imageArray = append(imageArray, container.Image)
+		}
+		images := strings.Join(imageArray, ", ")
+
+		data := MetricData{
+			Namespace: namespace,
+			App:       app,
+			Pod:       pod,
+			Version:   version,
+			Images:    images,
+		}
+
+		metricData = append(metricData, data)
+	}
+	return metricData
+}
+
 func main() {
 
 	log.Info(fmt.Sprintf("Starting version metrics service with %d second refresh", refreshPeriod))
-	log.Info(fmt.Sprintf("Watching the %s namespace", namespace))
+	log.Info(fmt.Sprintf("Watching the %s namespaces", namespaces))
 	log.Info(fmt.Sprintf("Prometheus endpoint enabled at %s", endpoint))
 
 	//config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -90,47 +129,24 @@ func main() {
 		panic(err)
 	}
 
-	listOptions := metav1.ListOptions{}
-
 	metrics := []MetricData{}
 
 	go func() {
 		for {
-			log.Info("Refreshing metrics...")
 			metrics = nil
+			for _, namespace := range namespaces {
+				log.Info("Refreshing metrics...", namespace)
 
-			pods, _ := clientset.CoreV1().Pods(namespace).List(context.TODO(), listOptions)
-			for _, pod := range pods.Items {
+				data := getMetricData(clientset, namespace)
+				metrics = append(metrics, data...)
 
-				containers := pod.Spec.Containers
-				metadata := pod.ObjectMeta
-				namespace := metadata.Namespace
-				app := metadata.Labels["app"]
-				pod := metadata.Name
-				version := metadata.Labels["version"]
-
-				//Long winded way first
-				imageArray := []string{}
-				for _, container := range containers {
-					imageArray = append(imageArray, container.Image)
-				}
-				images := strings.Join(imageArray, ", ")
-
-				data := MetricData{
-					Namespace: namespace,
-					App:       app,
-					Pod:       pod,
-					Version:   version,
-					Images:    images,
-				}
-
-				metrics = append(metrics, data)
 			}
 
 			for _, metric := range metrics {
 				bxServiceInfo.With(
 					prometheus.Labels{
 						"namespace": metric.Namespace,
+						"app":       metric.App,
 						"pod":       metric.Pod,
 						"version":   metric.Version,
 						"images":    metric.Images}).Set(1)

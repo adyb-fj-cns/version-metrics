@@ -20,10 +20,10 @@ spec:
       - name: version-metrics
         image: version-metrics-tilt
         env:
-          - name: NAMESPACE
-            value: ci
+          - name: NAMESPACES
+            value: default,kube-system
           - name: REFRESH_PERIOD
-            value: "5" 
+            value: "30" 
           - name: PROMETHEUS_ENDPOINT
             value: "/probe"             
         ports:

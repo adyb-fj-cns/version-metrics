@@ -1,33 +1,33 @@
-APP=version-metrics
-IMAGE=adybfjcns/${APP}
-TAG=0.1.0.2
+include .env
+include staging/.env
+export $(shell sed 's/=.*//' .env)
+export $(shell sed 's/=.*//' staging/.env)
 
-ACP_IMAGE=artifactory.bx.homeoffice.gov.uk/dev/${APP}
+local: build-image push-image test-image
 
-all: build-image push-image test-image
+staging: staging-build-image staging-push-image staging-apply
 
-acp: acp-build-image acp-push-image acp-apply
+staging-build-image:
+	docker build -t ${STAGING_IMAGE} .
 
-acp-build-image:
-	docker build -t ${ACP_IMAGE}:${TAG} .
+staging-push-image:
+	docker push ${STAGING_IMAGE}
 
-acp-push-image:
-	docker push ${ACP_IMAGE}:${TAG}
-
-acp-apply:
-	kubectx acp-sandpit11
-	kubectl apply -f ./k8s-acp.yaml
+staging-apply:
+	kubectx ${STAGING_CONTEXT}
+	kubectl apply -f staging/k8s.yaml
 
 build-image:
-	docker build -t ${IMAGE}:${TAG} .
+	docker build -t ${DEV_IMAGE} .
 
 push-image:
-	docker push ${IMAGE}:${TAG}
+	docker push ${DEV_IMAGE}
 
 test-image:
-	kubectl run ${APP} -it --rm --image=${IMAGE}:${TAG} --port 8000
+	kubectl run ${APP} -it --rm --image=${DEV_IMAGE} --port 8000
 
 dev:
+	kubectx ${DEV_CONTEXT} 
 	tilt up --stream
 
 cleanup:
